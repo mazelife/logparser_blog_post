@@ -12,8 +12,8 @@ Publishing the blog post
 	?> activate blogpost/bin/activate
 	?> pip install sphinx
 	?> cd doc
-	?> make html  # publish the HTML verison with sphinx
-	?> open _build/html/index.html -a safari  # or open _build/html/index.html -a chrome
+	?> make singlehtml  # publish the HTML verison with sphinx
+	?> open _build/singlehtml/index.html -a safari  # or open _build/html/index.html -a chrome
 
 
 Building the Haskell project 

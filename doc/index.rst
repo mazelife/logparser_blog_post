@@ -1,5 +1,5 @@
-High-performance Log Parsing in Haskell
-========================================
+High-performance Log Parsing in Haskell: Part One
+==================================================
 
 .. highlight:: haskell
 
@@ -86,6 +86,9 @@ Knowing which to chose largely depends on your requirements. Parsec is the slowe
 
 For parsing large log files, we care very much about performance. If, occasionally, a malformed log line appears we can note that fact and continue on, but we don't necessarily need detailed information about why it was malformed. For these reasons we chose attoparsec.
 
+Through the rest of this post, we assume the reader has a basic working knowledge of Haskell. If you're totally new to Haskell but the subject interests you, there's an excellent `overview <https://wiki.haskell.org/Introduction>`_ on the Haskell website, plus `a number excellent books <https://www.safaribooksonline.com/learn/new-languages/haskell>`_ on the subject in Safari's catalog.
+
+
 Simple parser 1: HTTP method
 -----------------------------
 
@@ -100,7 +103,7 @@ Here you see a parser at its simplest. With attoparsec, parsers will always retu
 #. Consume a sequence of bytes matching the length of the input string ``"GET"`` and return that string if they match (``string "GET"``)
 #. Inject a string--``"Get"``--into the Parser monadic type (``return "Get"``)
 
-In attoparsec, a ``Parser`` can be treated as a monad if need be or, it can be treated more simply as an applicative functor, which means we can simplify our parser by replacing the monadic sequence ``>>`` with the applicative one ``*>``::
+In attoparsec, a ``Parser`` can be treated as a monad if need be or, it can be treated more simply as an `applicative functor <https://www.safaribooksonline.com/library/view/learn-you-a/9781457100406/ch11.html>`_, which means we can simplify our parser by replacing the monadic sequence ``>>`` with the applicative one ``*>``::
 
 	parseHTTPMethod :: Parser String
 	parseHTTPMethod string "GET" *> return "Get"
@@ -110,7 +113,7 @@ This parser isn't very interesting but we can verify that it works::
 	> parseOnly parseHTTPMethod "GET"
 	> Right "Get"
 
-Attoparsec returns the result of a parse in the ``Either`` `monad <http://learnyouahaskell.com/for-a-few-monads-more#error>`_, which means on the right you can expect the result of the parse, and on the left you can expect an error if the input could not be parsed::
+Attoparsec returns the result of a parse in the ``Either`` `monad <https://www.fpcomplete.com/school/starting-with-haskell/basics-of-haskell/10_Error_Handling#either-may-be-better-than-maybe>`_, which means on the right you can expect the result of the parse, and on the left you can expect an error if the input could not be parsed::
 
 	> parseOnly parseHTTPMethod "POST"
 	Left "Failed reading: takeWith"
@@ -152,7 +155,7 @@ With nothing more than ``*>`` and ``<|>`` we've built-up a more complex parser f
 		<|> (stringCI "CONNECT" *> return "Connect")
 		<|> return "Unknown"
 
-Firstly, we've substituted ``string`` for ``stringCI`` which is the case-insensitive version. Secondly, at the very end of our chain, we've now added one final parser that is always guaranteed to succeed because all it does is return the string "Unknown". This parser now has a fall-back "default" value if the HTTP method is not recognized. Conversely, if we want to be strict in the input we allow, we might do this instead::
+Firstly, we've substituted ``string`` for ``stringCI`` which is the case-insensitive version. Secondly, at the very end of our chain, we've now added one final parser that is always guaranteed to succeed because all it does is return the string "Unknown". This parser now has a fall-back "default" value if the HTTP method is not recognized. Conversely, if we want to be strict in the input we allow, we might do this instead [#f1]_ ::
 
 	parseHTTPMethod :: Parser String
 	parseHTTPMethod =
@@ -212,7 +215,7 @@ In this example, we first define a new type called HTTPMethod. In type-system th
 		putStrLn "Log file contained " ++ (show $ countGets methodResults) " ++ GET requests."
 		return ()
 
-We apply our parser to a list of log file lines we've read [#f1]_ from a file, then extract only the results that succeeded with ``rights``. This leaves us with a list of ``HTTPMethod`` types from which we can extract a count of all the ``Get`` types.
+We apply our parser to a list of log file lines we've read [#f2]_ from a file, then extract only the results that succeeded with ``rights``. This leaves us with a list of ``HTTPMethod`` types from which we can extract a count of all the ``Get`` types.
 
 
 Next, let's define a parser for the HTTP status code. We'll step through this more quickly now that the basics are clear.
@@ -281,4 +284,5 @@ We've covered some of the theory behind parsers and parser combinators and built
 
 .. rubric:: Footnotes
 
-.. [#f1] You may have noticed that we are reading in log data as a ``Bytestring`` rather than a standard Haskell string. The reasons for this will be discussed in in the second part of this series.
+.. [#f1] The ``fail`` function is part of the `monadic Typeclass <https://www.safaribooksonline.com/library/view/real-world-haskell/9780596155339/ch14s04.html>`_. ``fail`` is generally disliked within the Haskell community and should not be used unless you are sure the monad in which you evoke it actually overrides the default ``fail`` behavior, which is to print the message to the ``stderr`` and exit the program.  Fortunately, attoparsec treats a call to ``fail`` more sensibly: when called within ``Parser``, any further attempts to parse the input will be stopped and the error message returned as ``Left {{error message}}``. In cases like this where we are parsing a log file one line at a time, if we encounter a line with a value that seems hopelessly wrong, telling attoparsec to just give up and go to the next line may be a perfectly valid behavior.
+.. [#f2] You may have noticed that we are reading in log data as a ``Bytestring`` rather than a standard Haskell string. The reasons for this will be discussed in in the second part of this series.

@@ -21,6 +21,19 @@ parseHTTPMethod =
 	<|> return Unknown
 
 
+parseHTTPMethodStrictly :: Parser String
+parseHTTPMethodStrictly =
+            (stringCI "GET" >> return "Get")
+        <|> (stringCI "POST" >> return "Post")
+        <|> (stringCI "PUT" >> return "Put")
+        <|> (stringCI "DELETE" >> return "Delete")
+        <|> (stringCI "OPTIONS" >> return "Options")
+        <|> (stringCI "HEAD" >> return "Head")
+        <|> (stringCI "TRACE" >> return "Trace")
+        <|> (stringCI "CONNECT" >> return "Connect")
+        <|> fail "Invalid HTTP Method"
+
+
 parseHTTPStatus :: Parser (Maybe Int)
 parseHTTPStatus = validate <$> decimal
 	where
