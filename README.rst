@@ -6,7 +6,7 @@ This project includes a blog post (written in `reStructured Text <http://docutil
 Publishing the blog post
 -------------------------
 
-`Sphinx <http://sphinx-doc.org/>` is your best bet as it will give you output in a nice format with syntax highlighting for all code snippets. Installation/publishing instructions are::
+`Sphinx <http://sphinx-doc.org/>`_ is your best bet as it will give you output in a nice format with syntax highlighting for all code snippets. Installation/publishing instructions are::
 
 	?> virtualenv blogpost
 	?> activate blogpost/bin/activate
@@ -43,6 +43,6 @@ The install step will take a some time as all dependencies are bing downloaded a
 	
 	?> cabal build
 
-This project builds an executable that will be located in ``dist/build/goose/``. This executable can be moved to ``/usr/local/bin`` once it's built.
+This project builds an executable that will be located in ``dist/build/parser/``. 
 
 
