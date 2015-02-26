@@ -26,9 +26,9 @@ Because these log files represented all traffic coming to our site, each chunk t
 #. We wanted to be able to parse them as quickly as possible using as little memory as possible.
 #. We wanted to get away with writing as little code as possible to accomplish this.
 
-We write a lot of Python here at Safari, in fact it's our most widely-used language. Because it's a very high-level language, it was likely it would satisfy our second requirement, but experience with writing log parsers in Python before--even when using `tricks like lazy evaluation <http://www.dabeaz.com/generators/>`_--lead us to suspect that it would not do so well in satisfying the first requirement. 
+We write a lot of Python here at Safari, in fact it's our most widely-used language. Because it's a very high-level language, it was likely it would satisfy our second requirement. But experience with writing log parsers in Python before--even when using `tricks like lazy evaluation <http://www.dabeaz.com/generators/>`_--lead us to suspect that it would not do so well in satisfying the first requirement. 
 
-Conversely, something like C or C++ might have allowed us to maximize efficiency, but would have lead to a considerably larger code base. Haskell seemed like it might be a language that would allow us to maximize for for both our goals. Although we have some engineers at Safari who have worked with Haskell in the past, this would be the first Haskell product we put into production at the company; we decided to prototype a log parser in Haskell and see where we ended up. 
+Conversely, something like C or C++ might have allowed us create a much more efficient parser, but would have lead to a considerably larger code base as well. Haskell seemed like it might be a language that would allow us to maximize for both our goals. Although we have some engineers at Safari who have worked with Haskell in the past, this would be the first Haskell product we put into production at the company; we decided to prototype a log parser in Haskell and see where we ended up. 
 
 The results were quite promising: we were able to pull together a working prototype in just a few days. It was impressively fast compared to Python-based log parsers we'd built in the past and worked in more-or-less constant space; no matter how big of a file we gave it, memory usage stayed around 5MB. The results were good enough that we decided to complete the project and put it into production.
 
@@ -46,7 +46,7 @@ Let's say you have a file full of lines that look like this::
 You might recognize this as a log line in what's called `NCSA Combined Log Format <http://publib.boulder.ibm.com/tividd/td/ITWSA/ITWSA_info45/en_US/HTML/guide/c-logs.html#combined>`_, a format that's output by many web servers. If you break it down into its constituent pieces, you get:
 
 * The IP address the request originated from: ``212.121.121.118``
-* The rfc931 identifier and username; since these are unknown they show up as ``-`` and ``-``
+* The `rfc931 <https://www.ietf.org/rfc/rfc931.txt>`_ identifier and user name; since these are unknown they show up as ``-`` and ``-``
 * The date, time, and timezone of the request: ``2015-01-13T14:30:19Z``
 * The request method: ``GET``
 * The URL requested: ``/register/``
@@ -56,7 +56,7 @@ You might recognize this as a log line in what's called `NCSA Combined Log Forma
 * The user agent: ``Mozilla/5.0 (Windows NT 6.3; WOW64; Trident/7.0; Touch; rv:11.0) like Gecko``
 * The value of a cookie called "sessionid": ``sessionid=axzx5ksfugbf36gqmeindmdeyqllg4pe``
 
-If you had to write something to parse this information out, you might first chose a `regular expression <http://www.regexr.com/3abtm>`_:
+If you had to write something to parse this information out, you might first chose a `regular expression <http://regexr.com/3agh8>`_:
 
 .. code-block:: perl
 
@@ -64,7 +64,7 @@ If you had to write something to parse this information out, you might first cho
 
 This would parse out the basic units listed above, which would all then need further validation and parsing. But a regular expression-based approach has a couple of problems:
 
-Firstly, it's not very easy to read. If you spend a lot of time with regular expressions, you can probably figure it out after a bit, but this particular regular expression is pretty unsophisticated. We could try to make it more sophisticated, of course. For example, it doesn't do anything to validate the IPV4 address. So we could need to replace ``([^ ]+)`` with `this regex <https://www.safaribooksonline.com/library/view/regular-expressions-cookbook/9780596802837/ch07s16.html>`_ to do that:
+Firstly, it's not very easy to read. If you spend a lot of time with regular expressions, you can probably figure it out after a bit, but this particular regular expression doesn't even do all that much. We could try to make it more sophisticated, of course; for example, it doesn't do anything to validate the IPV4 address. So we could need to replace ``([^ ]+)`` with `this regex <https://www.safaribooksonline.com/library/view/regular-expressions-cookbook/9780596802837/ch07s16.html>`_ to do that:
 
 .. code-block:: perl
 
@@ -74,13 +74,13 @@ We could do something similar for the date with this regular expression:
 
 .. code-block:: perl
 
-  	/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{1,2})Z/
+  	/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):-{0,1}(\d{1,2})Z/
 
 But as you can see, this is starting to get ugly really fast, and we haven't even gotten to the hard part, like parsing user agent strings.
 
-These regexes don't necessarily support good error handling either. And if we had different variants of data that are allowed in the log file, depending on the situation, we can't really handle them all without resorting to `backtracking <https://www.safaribooksonline.com/library/view/introducing-regular-expressions/9781449338879/ch04.html>`_. However, backtracking will make regular expression performance nose-dive and may, in some pathological cases, completely blow up your memory. Furthermore, a large, complex regular expression is difficult to test. Wouldn't it be nice if we could break down the parsing of a log line into a number of small, simple, easily-tested units and then combine them to make a full parser instead?
+These regular expressions don't necessarily support good error handling either. And if we had different variants of data that are allowed in the log file, depending on the situation, we can't really handle them all without resorting to `backtracking <https://www.safaribooksonline.com/library/view/introducing-regular-expressions/9781449338879/ch04.html>`_. However, backtracking will make regular expression performance nose-dive and may, in some pathological cases, completely blow up your memory. Furthermore, a large, complex regular expression is difficult to test. Wouldn't it be nice if we could break down the parsing of a log line into a number of small, simple, easily-tested units and then combine them to make a full parser instead?
 
-Haskell allows us to do this with decidedly better approach: parsers and parser combinators. Think of a parser as a function that consumes all or part of a string and returns some structured interpretation of it. Parser combinators allow us to combine small, simple parsers into more complex ones. When it comes to this approach, Haskell comes to the log parsing game with a decidedly unfair advantage: it has not one, but two industrial-strength, full-featured, and mature parsing libraries: `parsec <https://hackage.haskell.org/package/parsec>`_ and `attoparsec <http://hackage.haskell.org/package/attoparsec>`_.
+Haskell allows us to do this with decidedly better approach: parsers and parser combinators. Think of a parser as a function that consumes all or part of a string and returns some structured interpretation of it. Parser combinators allow us to combine small, simple parsers into more complex ones by sequencing parsers according to the order of the things they parse in a log file line. When it comes to this approach, Haskell comes to the log parsing game with a decidedly unfair advantage: it has not one, but two industrial-strength, full-featured, and mature parsing libraries: `parsec <https://hackage.haskell.org/package/parsec>`_ and `attoparsec <http://hackage.haskell.org/package/attoparsec>`_.
 
 Knowing which to chose largely depends on your requirements. Parsec is the slower of the two, but it allows users to produce more detailed error messages on parse errors. If you wanted to be able to parse source code files (which are generally not *that* big) in a particular language and provide detailed messages about, for example, syntax errors, parsec is a great choice. But if you need to parse very large volumes of data and don't care as much about error messages, then attoparsec is the way two go. 
 
@@ -89,7 +89,7 @@ For parsing large log files, we care very much about performance. If, occasional
 Simple parser 1: HTTP method
 -----------------------------
 
-Using attoparsec, let's write a parser that will correctly handle one small, simple task: parsing the HTTP method in the logfile::
+Using attoparsec, let's write a parser that will correctly handle one small, simple task: parsing the HTTP method in the log file::
 
 	parseHTTPMethod :: Parser String
 	parseHTTPMethod string "GET" >> return "Get"
@@ -110,12 +110,12 @@ This parser isn't very interesting but we can verify that it works::
 	> parseOnly parseHTTPMethod "GET"
 	> Right "Get"
 
-Attoparsec returns the result of a parse in the ``Either`` monad, which means on the right you can expect the result of the parse, and on the left you can expect an error if the input could not be parsed::
+Attoparsec returns the result of a parse in the ``Either`` `monad <http://learnyouahaskell.com/for-a-few-monads-more#error>`_, which means on the right you can expect the result of the parse, and on the left you can expect an error if the input could not be parsed::
 
 	> parseOnly parseHTTPMethod "POST"
 	Left "Failed reading: takeWith"
 
-The error message "Failed reading: takeWith" is an example of the less-than-helpful results you can get with attoparsec. This parser is, indeed, very small and very simple, but it only works with one possible HTTP method. Let's improve it to work with all the methods enumerated in `the HTTP spec <http://www.w3.org/Protocols/rfc2616/rfc2616-sec9.html>`_::
+(The error message "Failed reading: takeWith" is an example of the less-than-helpful results you can get with attoparsec as opposed to parsec.) This parser is, indeed, small and simple. In fact it's so simple, it only works with one possible HTTP method. Let's improve it to work with all the methods enumerated in `the HTTP spec <http://www.w3.org/Protocols/rfc2616/rfc2616-sec9.html>`_::
 
 	parseHTTPMethod :: Parser String
 	parseHTTPMethod =
@@ -194,6 +194,9 @@ Let's wrap this example up with a final improvement::
 
 In this example, we first define a new type called HTTPMethod. In type-system theory is called a "`sum type <http://en.wikipedia.org/wiki/Tagged_union>`_" because we can define all possible representations: they are simply the allowed methods enumerated in `the HTTP spec <http://www.w3.org/Protocols/rfc2616/rfc2616-sec9.html>`_ plus a fall-back called ``Unknown``. A value of the ``HTTPMethod`` type must be a ``Get``, ``Post``, ``Put``, etc. But it has to be one of these and cannot be anything else. In this way, we can see how we can model domain-specific information in our type system. This is a very powerful feature of Haskell. For example, if we wanted to count up all the ``GET`` requests in a log file, we can do this::
 
+	import qualified Data.ByteString as B
+	import qualified Data.ByteString.Char8 as B8
+
 	countType :: HTTPMethod -> Int
 	countType Get = 1
 	countType _   = 0
@@ -203,11 +206,13 @@ In this example, we first define a new type called HTTPMethod. In type-system th
 
 	main :: IO ()
 	main = do
-		let methodResults = rights $ map (parseOnly parseHTTPMethod) sampleLogLines
+		logFile <- B.readFile "/path/to/logfile.log"
+		let logLines = B8.lines logFile
+		let methodResults = rights $ map (parseOnly parseHTTPMethod) logLines
 		putStrLn "Log file contained " ++ (show $ countGets methodResults) " ++ GET requests."
 		return ()
 
-We apply our parser to a list of log file lines (represented by the variable ``sampleLogLines``), then extract only the results that succeeded with ``rights``. This leaves us with a list of ``HTTPMethod`` types from which we can extract a count of all the ``Get`` types.
+We apply our parser to a list of log file lines we've read [#f1]_ from a file, then extract only the results that succeeded with ``rights``. This leaves us with a list of ``HTTPMethod`` types from which we can extract a count of all the ``Get`` types.
 
 
 Next, let's define a parser for the HTTP status code. We'll step through this more quickly now that the basics are clear.
@@ -223,12 +228,12 @@ We expect an HTTP status code `to be in the range of 200 - 505 <http://www.w3.or
 			validate d = if (d >= 200 && d < 506) then Just d else Nothing
 
 
-Here we encounter another attoparsec parser combinator: ``decimal``. This `returns an unsigned decimal number <https://hackage.haskell.org/package/attoparsec-0.12.1.3/docs/Data-Attoparsec-ByteString-Char8.html#v:decimal>`_, consuming the input until it encounters a non-numeric character. In the where-binding of the function we also define a helper function ``validate`` which takes the parsed integer and returns a ``Just Int`` if the status code is valid or ``Nothing`` if it is not. We can map this validation function over the value of the functor returned by decimal with ``<$>``.
+Here we encounter another attoparsec parser: ``decimal``. This `returns an unsigned decimal number <https://hackage.haskell.org/package/attoparsec-0.12.1.3/docs/Data-Attoparsec-ByteString-Char8.html#v:decimal>`_, consuming the input until it encounters a non-numeric character. In the where-binding of the function we also define a helper function ``validate`` which takes the parsed integer and returns a ``Just Int`` if the status code is valid or ``Nothing`` if it is not. We can map this validation function over the value of the functor returned by ``decimal`` with ``<$>``.
 
 Putting it all together
 -----------------------
 
-In the next blog post, we will cover parsing out more of the NCSA Combined Log Format. In the mean time, now that we can parse out status code and method, let's imagine a much simpler log file format with just the information we'v dealt with so far::
+In the next blog post, we will cover parsing out more of the NCSA Combined Log Format. In the mean time, now that we can parse out status code and method, let's imagine a much simpler log file format with just the information we've dealt with so far::
 
 	GET 200
 	PUT 201
@@ -245,7 +250,7 @@ We have an HTTP method followed by a space, followed by the HTTP status code. (T
 	type LogEntry = (HTTPMethod, Maybe HTTPStatus)
 
 
-We now have an alias for ``Int`` called ``HTTPStatus``, a we have defined the return type of our parser: a tuple of the method and the status code. Now that we have these types, we can write a parser for the full log file line::
+We now have an alias for ``Int`` called ``HTTPStatus``, and we have defined the return type of our parser: a tuple of the method and the status code. Now that we have these types, we can write a parser for the full log file line::
 
 	logParser :: Parser LogEntry
 	logParser = do
@@ -257,7 +262,7 @@ Given a log file line, the parser will parse the method, then a space (using ``s
 
 
 	logParser :: Parser LogEntry
-	logParser = liftA2 (,) parseHTTPMethod (space >> parseHTTPStatus)
+	logParser = liftA2 (,) parseHTTPMethod (space *> parseHTTPStatus)
 
 If you're comfortable with the ``Control.Applicative`` standard library this second approach probably looks nicer, but if you're not, it's definitely harder to read. Whether you choose to sequence sub-parsers monadically via `do-notation <https://wiki.haskell.org/Monad#Special_notation>`_ or whether you opt for an applicative approach depends on a couple of factors:
 
@@ -267,7 +272,13 @@ If you're comfortable with the ``Control.Applicative`` standard library this sec
 #. Do you have branches in your parsing process where the next step is dependent on a previous one? In cases where you need to do incremental parsing because the language you're parsing is not context-free, you'll have to resort to the monadic approach; that's really the whole point of the Monad abstraction: the serial nature in which it executes and sequences computations is one of the things that differentiates it from an applicative functor.
 #. How important is performance? Sequencing parsers applicatively allows the compiler to perform static analysis on a parser without running it. This knowledge can be used to avoid things like backtracking that may slow your parser down. This is not possible when sequencing parsers monadically because the grammar of each parser depends on the previous one.
 
+We've covered some of the theory behind parsers and parser combinators and built simplified log parser using attoparsec. In the second part of this series, we'll discuss:
 
+* parsing more complex data,
+* performance considerations,
+* packaging everything as a proper haskell project,
+* and building an executable ``logparser`` command that we can deploy.
 
+.. rubric:: Footnotes
 
-
+.. [#f1] You may have noticed that we are reading in log data as a ``Bytestring`` rather than a standard Haskell string. The reasons for this will be discussed in in the second part of this series.
