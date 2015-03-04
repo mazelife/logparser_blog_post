@@ -1,7 +1,8 @@
 import Control.Applicative
 import Data.Attoparsec.ByteString.Char8
 import Data.Either
-import qualified Data.Attoparsec.ByteString.Char8 as C8
+import qualified Data.ByteString as B
+import qualified Data.ByteString.Char8 as B8
 
 import Analysis
 import Samples
@@ -52,7 +53,7 @@ logParserPF = liftA2 (,) parseHTTPMethod (space *> parseHTTPStatus)
 
 
 
-
+parens :: Parser B8.ByteString
 parens = char '(' *> body <* char ')'
 	where
 		body = scan (1 :: Int) $ \s c ->
@@ -61,6 +62,14 @@ parens = char '(' *> body <* char ')'
 				(1, ')') ->  Nothing
 				(p, ')') ->  Just (p - 1)
 				(p, _) ->    Just p
+
+
+main2 :: IO [Result LogEntry]
+main2 = do
+	logFile <- B.readFile "/path/to/logfile.log"
+	let logLines = B8.lines logFile
+	return $ map (parse logParser) logLines
+
 
 main :: IO ()
 main = do

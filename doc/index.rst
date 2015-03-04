@@ -26,9 +26,9 @@ Because these log files represented all traffic coming to our site, each chunk t
 #. We wanted to be able to parse them as quickly as possible using as little memory as possible.
 #. We wanted to get away with writing as little code as possible to accomplish this.
 
-We write a lot of Python here at Safari, in fact it's our most widely-used language. Because it's a very high-level language, it was likely it would satisfy our second requirement. But experience with writing log parsers in Python before--even when using `tricks like lazy evaluation <http://www.dabeaz.com/generators/>`_--lead us to suspect that it would not do so well in satisfying the first requirement. 
+We write a lot of Python here at Safari, in fact it's our most widely-used language. Because it's a very high-level language, it was likely it would satisfy our second requirement. But experience with writing log parsers in Python before--even when using `tricks like lazy evaluation <http://www.dabeaz.com/generators/>`_--led us to suspect that it would not do so well in satisfying the first requirement. 
 
-Conversely, something like C or C++ might have allowed us create a much more efficient parser, but would have lead to a considerably larger code base as well. Haskell seemed like it might be a language that would allow us to maximize for both our goals. Although we have some engineers at Safari who have worked with Haskell in the past, this would be the first Haskell product we put into production at the company; we decided to prototype a log parser in Haskell and see where we ended up. 
+Conversely, something like C or C++ might have allowed us create a much more efficient parser, but would resulted in a considerably larger code base as well. Haskell seemed like it might be a language that would allow us to maximize for both our goals. Although we have some engineers at Safari who have worked with Haskell in the past, this would be the first Haskell product we put into production at the company; we decided to prototype a log parser in Haskell and see where we ended up. 
 
 The results were quite promising: we were able to pull together a working prototype in just a few days. It was impressively fast compared to Python-based log parsers we'd built in the past and worked in more-or-less constant space; no matter how big of a file we gave it, memory usage stayed around 5MB. The results were good enough that we decided to complete the project and put it into production.
 
@@ -80,7 +80,7 @@ But as you can see, this is starting to get ugly really fast, and we haven't eve
 
 These regular expressions don't necessarily support good error handling either. And if we had different variants of data that are allowed in the log file, depending on the situation, we can't really handle them all without resorting to `backtracking <https://www.safaribooksonline.com/library/view/introducing-regular-expressions/9781449338879/ch04.html>`_. However, backtracking will make regular expression performance nose-dive and may, in some pathological cases, completely blow up your memory. Furthermore, a large, complex regular expression is difficult to test. Wouldn't it be nice if we could break down the parsing of a log line into a number of small, simple, easily-tested units and then combine them to make a full parser instead?
 
-Haskell allows us to do this with decidedly better approach: parsers and parser combinators. Think of a parser as a function that consumes all or part of a string and returns some structured interpretation of it. Parser combinators allow us to combine small, simple parsers into more complex ones by sequencing parsers according to the order of the things they parse in a log file line. When it comes to this approach, Haskell comes to the log parsing game with a decidedly unfair advantage: it has not one, but two industrial-strength, full-featured, and mature parsing libraries: `parsec <https://hackage.haskell.org/package/parsec>`_ and `attoparsec <http://hackage.haskell.org/package/attoparsec>`_.
+Haskell allows us to do this with decidedly better approach: parsers and parser combinators. Think of a parser as a function that consumes all or part of a string and returns some structured interpretation of it along with the rest of the unconsumed string. Parser combinators allow us to combine small, simple parsers into more complex ones by sequencing parsers according to the order of the things they parse in a log file line. When it comes to this approach, Haskell comes to the log parsing game with a decidedly unfair advantage: it has not one, but two industrial-strength, full-featured, and mature parsing libraries: `parsec <https://hackage.haskell.org/package/parsec>`_ and `attoparsec <http://hackage.haskell.org/package/attoparsec>`_.
 
 Knowing which to chose largely depends on your requirements. Parsec is the slower of the two, but it allows users to produce more detailed error messages on parse errors. If you wanted to be able to parse source code files (which are generally not *that* big) in a particular language and provide detailed messages about, for example, syntax errors, parsec is a great choice. But if you need to parse very large volumes of data and don't care as much about error messages, then attoparsec is the way two go. 
 
@@ -95,30 +95,25 @@ Simple parser 1: HTTP method
 Using attoparsec, let's write a parser that will correctly handle one small, simple task: parsing the HTTP method in the log file::
 
 	parseHTTPMethod :: Parser String
-	parseHTTPMethod string "GET" >> return "Get"
+	parseHTTPMethod string "GET" *> return "Success!"
 
 
-Here you see a parser at its simplest. With attoparsec, parsers will always return some structured data (in this case a ``String``) in the ``Parser`` monad. In this case, we just sequence two operations with ``>>``:
+Here you see a parser at its simplest. With attoparsec, parsers will always return some structured data (in this case a ``String``) in the ``Parser`` monad. [#f0]_ This parser consists of two actions that are sequenced with ``*>``: 
 
 #. Consume a sequence of bytes matching the length of the input string ``"GET"`` and return that string if they match (``string "GET"``)
-#. Inject a string--``"Get"``--into the Parser monadic type (``return "Get"``)
+#. Return a string--"Success!"--to the parser (``return "Success!"``)
 
-In attoparsec, a ``Parser`` can be treated as a monad if need be or, it can be treated more simply as an `applicative functor <https://www.safaribooksonline.com/library/view/learn-you-a/9781457100406/ch11.html>`_, which means we can simplify our parser by replacing the monadic sequence ``>>`` with the applicative one ``*>``::
-
-	parseHTTPMethod :: Parser String
-	parseHTTPMethod string "GET" *> return "Get"
-
-This parser isn't very interesting but we can verify that it works::
+If the first action succeeds, the next one will be evaluated. This parser isn't very interesting but we can verify that it works with the ``parseOnly`` function, which will apply our parser to the given input and return the result::
 
 	> parseOnly parseHTTPMethod "GET"
-	> Right "Get"
+	> Right "Success!"
 
-Attoparsec returns the result of a parse in the ``Either`` `monad <https://www.fpcomplete.com/school/starting-with-haskell/basics-of-haskell/10_Error_Handling#either-may-be-better-than-maybe>`_, which means on the right you can expect the result of the parse, and on the left you can expect an error if the input could not be parsed::
+The ``parseOnly`` function returns the result of a parse in the ``Either`` `type <https://www.fpcomplete.com/school/starting-with-haskell/basics-of-haskell/10_Error_Handling#either-may-be-better-than-maybe>`_. The either type is one which always has either a "left" or a "right" value. It's often used for error handling: a ``Left`` value means an error occured and the value is a string explaining what went wrong. A ``Right`` value indicates success and holds the result. It's used that way here. Let's try to parse some "bad" data::
 
 	> parseOnly parseHTTPMethod "POST"
 	Left "Failed reading: takeWith"
 
-(The error message "Failed reading: takeWith" is an example of the less-than-helpful results you can get with attoparsec as opposed to parsec.) This parser is, indeed, small and simple. In fact it's so simple, it only works with one possible HTTP method. Let's improve it to work with all the methods enumerated in `the HTTP spec <http://www.w3.org/Protocols/rfc2616/rfc2616-sec9.html>`_::
+(The error message "Failed reading: takeWith" is an example of the less-than-helpful results you can get with attoparsec as opposed to parsec.) This parser is, indeed, small and simple. In fact it's so simple, it only works with one possible HTTP method: ``GET``. Let's improve it to work with all the methods enumerated in `the HTTP spec <http://www.w3.org/Protocols/rfc2616/rfc2616-sec9.html>`_::
 
 	parseHTTPMethod :: Parser String
 	parseHTTPMethod =
@@ -132,7 +127,7 @@ Attoparsec returns the result of a parse in the ``Either`` `monad <https://www.f
 		<|> (string "CONNECT" *> return "Connect")
 
 
-In this example, we begin to see the power of parser combinators. We can create a parser for each HTTP method and then simply combine them together using the associative binary operator ``<|>``. What this effectively means is::
+In this example, we begin to see the power of parser combinators. We can create a parser for each HTTP method and then simply combine them together using the associative binary operator ``<|>``. The parser will return a string matching the HTTP method it encounters in the log file. What this code effectively means is::
 	
 
 	-- First try parsing for GET. Did that succeed? The stop.
@@ -155,7 +150,7 @@ With nothing more than ``*>`` and ``<|>`` we've built-up a more complex parser f
 		<|> (stringCI "CONNECT" *> return "Connect")
 		<|> return "Unknown"
 
-Firstly, we've substituted ``string`` for ``stringCI`` which is the case-insensitive version. Secondly, at the very end of our chain, we've now added one final parser that is always guaranteed to succeed because all it does is return the string "Unknown". This parser now has a fall-back "default" value if the HTTP method is not recognized. Conversely, if we want to be strict in the input we allow, we might do this instead [#f1]_ ::
+Firstly, we've replaced ``string`` with ``stringCI`` which is the case-insensitive version. Secondly, at the very end of our chain, we've now added one final parser that is always guaranteed to succeed because all it does is return the string "Unknown". This parser now has a fall-back "default" value if the HTTP method is not recognized. Conversely, if we want to be strict in the input we allow, we might do this instead [#f1]_ ::
 
 	parseHTTPMethod :: Parser String
 	parseHTTPMethod =
@@ -195,7 +190,7 @@ Let's wrap this example up with a final improvement::
 		<|> return Unknown
 
 
-In this example, we first define a new type called HTTPMethod. In type-system theory is called a "`sum type <http://en.wikipedia.org/wiki/Tagged_union>`_" because we can define all possible representations: they are simply the allowed methods enumerated in `the HTTP spec <http://www.w3.org/Protocols/rfc2616/rfc2616-sec9.html>`_ plus a fall-back called ``Unknown``. A value of the ``HTTPMethod`` type must be a ``Get``, ``Post``, ``Put``, etc. But it has to be one of these and cannot be anything else. In this way, we can see how we can model domain-specific information in our type system. This is a very powerful feature of Haskell. For example, if we wanted to count up all the ``GET`` requests in a log file, we can do this::
+In this example, we first define a new type called HTTPMethod. In type-system theory is called a "`sum type <http://en.wikipedia.org/wiki/Tagged_union>`_" because we can define all possible representations: they are simply the allowed methods enumerated in `the HTTP spec <http://www.w3.org/Protocols/rfc2616/rfc2616-sec9.html>`_ plus a fall-back called ``Unknown``. A value of the ``HTTPMethod`` type must be a ``Get``, ``Post``, ``Put``, etc. But it has to be one of these and cannot be anything else. In this way, we can see how we can model domain-specific information in our type system. This is a very powerful feature of Haskell. For example, if we wanted to count up all the ``GET`` requests in a log file, we could do this::
 
 	import qualified Data.ByteString as B
 	import qualified Data.ByteString.Char8 as B8
@@ -215,8 +210,14 @@ In this example, we first define a new type called HTTPMethod. In type-system th
 		putStrLn "Log file contained " ++ (show $ countGets methodResults) " ++ GET requests."
 		return ()
 
-We apply our parser to a list of log file lines we've read [#f2]_ from a file, then extract only the results that succeeded with ``rights``. This leaves us with a list of ``HTTPMethod`` types from which we can extract a count of all the ``Get`` types.
+The ``main`` function defines a couple of steps:
 
+#. Read the logfile contents. [#f2]_
+#. Split the logfile up into a list of lines within the file.
+#. Apply the parser to our list of lines, then use ``rights`` to `extract <https://hackage.haskell.org/package/base-4.2.0.1/docs/Data-Either.html#v:rights>`_ only the ``Right`` values from a list of ``Either`` types (effectively discarding lines that failed to parse correctly)
+#. Count up the number of ``Get`` results.
+
+The ``countType`` function uses pattern-matching on its arguments and returns 1 if it is called with a ``Get`` type, and 0 for anything else. If we map this function over our results, we should have a list of ones and zeroes which we can then simply sum up; this is what the ``countGets`` function does.
 
 Next, let's define a parser for the HTTP status code. We'll step through this more quickly now that the basics are clear.
 
@@ -259,21 +260,26 @@ We now have an alias for ``Int`` called ``HTTPStatus``, and we have defined the 
 	logParser = do
 		method <- parseHTTPMethod
 		space
-		status <- parseHTTPStatus; return (method, status)
+		status <- parseHTTPStatus
+		return (method, status)
 
-Given a log file line, the parser will parse the method, then a space (using ``space``) then the status code. Combining parsers using do-notation makes for a very easy-to-read approach, but it's also an imperative one. We could rewrite this in a fully applicative style::
+Given a log file line, the parser will parse the method, then a space (using ``space``) then the status code. Combining parsers using do-notation makes for a very easy-to-read approach, but it's also an imperative one. We could rewrite this in a fully applicative style that accomplishes the same thing::
 
 
 	logParser :: Parser LogEntry
 	logParser = liftA2 (,) parseHTTPMethod (space *> parseHTTPStatus)
 
-If you're comfortable with the ``Control.Applicative`` standard library this second approach probably looks nicer, but if you're not, it's definitely harder to read. Whether you choose to sequence sub-parsers monadically via `do-notation <https://wiki.haskell.org/Monad#Special_notation>`_ or whether you opt for an applicative approach depends on a couple of factors:
+If you're comfortable with the ``Control.Applicative`` standard library this second approach probably looks nicer, but if you're not, it's definitely harder to read. Either approach is fine, so chose what you're comfortable with. [#f3]_ We can now parse our simplified log format easily::
 
 
-#. How comfortable is your team with the applicative style? 
-#. How many actions are you sequencing? If your final parser is built up of a many, many sub-parsers, do-notation may be easier to read
-#. Do you have branches in your parsing process where the next step is dependent on a previous one? In cases where you need to do incremental parsing because the language you're parsing is not context-free, you'll have to resort to the monadic approach; that's really the whole point of the Monad abstraction: the serial nature in which it executes and sequences computations is one of the things that differentiates it from an applicative functor.
-#. How important is performance? Sequencing parsers applicatively allows the compiler to perform static analysis on a parser without running it. This knowledge can be used to avoid things like backtracking that may slow your parser down. This is not possible when sequencing parsers monadically because the grammar of each parser depends on the previous one.
+	parseLog :: IO [LogEntry]
+	parseLog = do
+		logFile <- B.readFile "/path/to/logfile.log"
+		let logLines = B8.lines logFile
+		return $ rights $ map (parseOnly logParser) logLines		
+
+This function will read a file, parse it and return a list of all results that succeeded.
+
 
 We've covered some of the theory behind parsers and parser combinators and built simplified log parser using attoparsec. In the second part of this series, we'll discuss:
 
@@ -284,5 +290,8 @@ We've covered some of the theory behind parsers and parser combinators and built
 
 .. rubric:: Footnotes
 
+.. [#f0] You don't necessarily need to worry about the parser monad at this point; it's responsibility is feeding input to the parser and handling errors, among other things. 
+
 .. [#f1] The ``fail`` function is part of the `monadic Typeclass <https://www.safaribooksonline.com/library/view/real-world-haskell/9780596155339/ch14s04.html>`_. ``fail`` is generally disliked within the Haskell community and should not be used unless you are sure the monad in which you evoke it actually overrides the default ``fail`` behavior, which is to print the message to the ``stderr`` and exit the program.  Fortunately, attoparsec treats a call to ``fail`` more sensibly: when called within ``Parser``, any further attempts to parse the input will be stopped and the error message returned as ``Left {{error message}}``. In cases like this where we are parsing a log file one line at a time, if we encounter a line with a value that seems hopelessly wrong, telling attoparsec to just give up and go to the next line may be a perfectly valid behavior.
 .. [#f2] You may have noticed that we are reading in log data as a ``Bytestring`` rather than a standard Haskell string. The reasons for this will be discussed in in the second part of this series.
+.. [#f3] Sequencing parsers applicatively allows the compiler to perform static analysis on a parser without running it. This knowledge can be used to avoid things like backtracking that may slow your parser down. This is not possible when sequencing parsers monadically because the grammar of each parser depends on the previous one. However, performance results in this case are probably negligible; don't hesitate to choose do-notation if you find it easier to read.
